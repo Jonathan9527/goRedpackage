@@ -34,6 +34,12 @@ func main() {
 		log.Fatalf("connect rabbitmq: %v", err)
 	}
 	defer rabbitMQConn.Close()
+
+	redisClient, err := database.NewRedis(cfg.Redis)
+	if err != nil {
+		log.Fatalf("connect redis: %v", err)
+	}
+	defer redisClient.Close()
 	router := gin.Default()
 
 	homeService := service.NewHomeService(db)
@@ -42,7 +48,7 @@ func main() {
 	userRepository := repository.NewUserRepository(db)
 	userService := service.NewUserService(userRepository)
 	userHandler := handler.NewUserHandler(userService)
-	redPackageService := service.NewRedPackageService(userRepository, rabbitMQConn)
+	redPackageService := service.NewRedPackageService(userRepository, rabbitMQConn, redisClient)
 	redPackageHandler := handler.NewRedPackageHandler(redPackageService)
 
 	approuter.Register(router, approuter.Handlers{

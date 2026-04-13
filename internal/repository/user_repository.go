@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"learnGO/internal/model"
@@ -50,24 +51,31 @@ func (r *UserRepository) List(ctx context.Context, limit int, offset int) ([]mod
 }
 
 func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPackageAmount decimal.Decimal) error {
-
+	newBalance := u.Balance.Sub(redPackageAmount)
 	tx := r.db.WithContext(ctx).Begin()
-	tx.Model(&model.UserRecord{}).
-		Where("account = ?", u.Account).
+	res := tx.Model(&model.UserRecord{}).
 		Where(&model.UserRecord{Account: u.Account, Balance: u.Balance}).
 		Updates(map[string]interface{}{
-			"balance":    u.Balance.Sub(redPackageAmount).StringFixed(2),
+			"balance":    newBalance,
 			"updated_at": time.Now(),
 		})
-	tx.Create(&model.UserTransactionRecord{
+	if res.Error != nil {
+		tx.Rollback()
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		tx.Rollback()
+		return errors.New("balance changed, update failed")
+	}
+	err := tx.Create(&model.UserTransactionRecord{
 		UserID:        u.ID,
 		Type:          "red_package",
 		Amount:        redPackageAmount,
 		BeforeBalance: u.Balance,
-		AfterBalance:  u.Balance.Sub(redPackageAmount),
+		AfterBalance:  newBalance,
 		InOrOut:       0,
-	})
-	if err := tx.Error; err != nil {
+	}).Error
+	if err != nil {
 		tx.Rollback()
 		return err
 	}

@@ -2,18 +2,23 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/rand"
+	"time"
 
 	"learnGO/internal/database"
 	"learnGO/internal/repository"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/shopspring/decimal"
 )
 
 type RedPackageService struct {
 	userRepository *repository.UserRepository
 	publisher      *database.RabbitMQPublisher
+	redisClient    *redis.Client
 }
 
 type RedPackageCreatedMessage struct {
@@ -22,10 +27,16 @@ type RedPackageCreatedMessage struct {
 	RedPackageList []float64 `json:"red_package_list"`
 }
 
-func NewRedPackageService(userRepository *repository.UserRepository, publisher *database.RabbitMQPublisher) *RedPackageService {
+type CachedRedPackage struct {
+	Account        string    `json:"account"`
+	RedPackageList []float64 `json:"red_package_list"`
+}
+
+func NewRedPackageService(userRepository *repository.UserRepository, publisher *database.RabbitMQPublisher, redisClient *redis.Client) *RedPackageService {
 	return &RedPackageService{
 		userRepository: userRepository,
 		publisher:      publisher,
+		redisClient:    redisClient,
 	}
 }
 
@@ -42,8 +53,10 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 	if err := s.userRepository.UpdateBalance(ctx, user, redAmount); err != nil {
 		return nil, err
 	}
-
 	redPackageList := makeRedPackageList(redAmount.IntPart(), 5)
+	if err := s.cacheRedPackageList(ctx, account, redPackageList); err != nil {
+		return nil, err
+	}
 	if err := s.publisher.PublishJSON("red_package.created", RedPackageCreatedMessage{
 		Account:        account,
 		TotalAmount:    redAmount.StringFixed(2),
@@ -53,6 +66,24 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 	}
 
 	return redPackageList, nil
+}
+
+func (s *RedPackageService) cacheRedPackageList(ctx context.Context, account string, redPackageList []float64) error {
+	if s.redisClient == nil {
+		return nil
+	}
+
+	body, err := json.Marshal(gin.H{
+	body, err := json.Marshal(CachedRedPackage{
+		Account:        account,
+		RedPackageList: redPackageList,
+	})
+	if err != nil {
+		return err
+	}
+
+	key := fmt.Sprintf("redpackage:%s", account)
+	return s.redisClient.Set(ctx, key, body, 10*time.Minute).Err()
 }
 
 func makeRedPackageList(totalAmount int64, totalNum int) []float64 {
