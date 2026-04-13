@@ -2,16 +2,16 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"learnGO/internal/config"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
-func NewPostgres(cfg config.DatabaseConfig) (*sql.DB, error) {
+func NewPostgres(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
 		cfg.Host,
@@ -22,20 +22,25 @@ func NewPostgres(cfg config.DatabaseConfig) (*sql.DB, error) {
 		cfg.SSLMode,
 	)
 
-	db, err := sql.Open("pgx", dsn)
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(time.Hour)
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	sqlDB.SetMaxOpenConns(10)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+	if err := sqlDB.PingContext(ctx); err != nil {
+		sqlDB.Close()
 		return nil, err
 	}
 

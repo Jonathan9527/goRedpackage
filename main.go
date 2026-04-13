@@ -20,7 +20,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("connect postgres: %v", err)
 	}
-	defer db.Close()
+	sqlDB, err := db.DB()
+	if err != nil {
+		log.Fatalf("get sql db: %v", err)
+	}
+	defer sqlDB.Close()
 
 	if err := database.Migrate(db); err != nil {
 		log.Fatalf("migrate database: %v", err)
@@ -38,7 +42,7 @@ func main() {
 	userRepository := repository.NewUserRepository(db)
 	userService := service.NewUserService(userRepository)
 	userHandler := handler.NewUserHandler(userService)
-	redPackageService := service.NewRedPackageService(userRepository)
+	redPackageService := service.NewRedPackageService(userRepository, rabbitMQConn)
 	redPackageHandler := handler.NewRedPackageHandler(redPackageService)
 
 	approuter.Register(router, approuter.Handlers{

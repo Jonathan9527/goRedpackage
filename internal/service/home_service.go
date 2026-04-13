@@ -2,17 +2,18 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"learnGO/internal/model"
+
+	"gorm.io/gorm"
 )
 
 type HomeService struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-func NewHomeService(db *sql.DB) *HomeService {
+func NewHomeService(db *gorm.DB) *HomeService {
 	return &HomeService{
 		db: db,
 	}
@@ -29,7 +30,10 @@ func (s *HomeService) Health() model.HealthResponse {
 	defer cancel()
 
 	databaseStatus := "ok"
-	if err := s.db.PingContext(ctx); err != nil {
+	sqlDB, err := s.db.DB()
+	if err != nil {
+		databaseStatus = "error"
+	} else if err := sqlDB.PingContext(ctx); err != nil {
 		databaseStatus = "error"
 	}
 

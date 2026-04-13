@@ -2,85 +2,86 @@ package repository
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"learnGO/internal/model"
+
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type UserRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-func NewUserRepository(db *sql.DB) *UserRepository {
+func NewUserRepository(db *gorm.DB) *UserRepository {
 	return &UserRepository{
 		db: db,
 	}
 }
 
 func (r *UserRepository) FindByAccount(ctx context.Context, account string) (model.User, error) {
-	var user model.User
-	var createdAt time.Time
-	var updatedAt time.Time
-
-	err := r.db.QueryRowContext(ctx, `
-		SELECT id, account, username, balance::text, created_at, updated_at
-		FROM users
-		WHERE account = $1
-	`, account).Scan(
-		&user.ID,
-		&user.Account,
-		&user.Username,
-		&user.Balance,
-		&createdAt,
-		&updatedAt,
-	)
-	if err != nil {
+	var record model.UserRecord
+	if err := r.db.WithContext(ctx).
+		Where("account = ?", account).
+		First(&record).Error; err != nil {
 		return model.User{}, err
 	}
 
-	user.CreatedAt = createdAt.Format(time.RFC3339)
-	user.UpdatedAt = updatedAt.Format(time.RFC3339)
-	return user, nil
+	return toUserModel(record), nil
 }
 
 func (r *UserRepository) List(ctx context.Context, limit int, offset int) ([]model.User, error) {
-	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, account, username, balance::text, created_at, updated_at
-		FROM users
-		ORDER BY id
-		LIMIT $1 OFFSET $2
-	`, limit, offset)
-	if err != nil {
+	var records []model.UserRecord
+	if err := r.db.WithContext(ctx).
+		Order("id ASC").
+		Limit(limit).
+		Offset(offset).
+		Find(&records).Error; err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	users := make([]model.User, 0, limit)
-	for rows.Next() {
-		var user model.User
-		var createdAt time.Time
-		var updatedAt time.Time
-
-		if err := rows.Scan(
-			&user.ID,
-			&user.Account,
-			&user.Username,
-			&user.Balance,
-			&createdAt,
-			&updatedAt,
-		); err != nil {
-			return nil, err
-		}
-
-		user.CreatedAt = createdAt.Format(time.RFC3339)
-		user.UpdatedAt = updatedAt.Format(time.RFC3339)
-		users = append(users, user)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
+	for _, record := range records {
+		users = append(users, toUserModel(record))
 	}
 
 	return users, nil
+}
+
+func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPackageAmount decimal.Decimal) error {
+
+	tx := r.db.WithContext(ctx).Begin()
+	tx.Model(&model.UserRecord{}).
+		Where("account = ?", u.Account).
+		Where(&model.UserRecord{Account: u.Account, Balance: u.Balance}).
+		Updates(map[string]interface{}{
+			"balance":    u.Balance.Sub(redPackageAmount).StringFixed(2),
+			"updated_at": time.Now(),
+		})
+	tx.Create(&model.UserTransactionRecord{
+		UserID:        u.ID,
+		Type:          "red_package",
+		Amount:        redPackageAmount,
+		BeforeBalance: u.Balance,
+		AfterBalance:  u.Balance.Sub(redPackageAmount),
+		InOrOut:       0,
+	})
+	if err := tx.Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+func toUserModel(record model.UserRecord) model.User {
+	return model.User{
+		ID:        record.ID,
+		Account:   record.Account,
+		Username:  record.Username,
+		Balance:   record.Balance,
+		CreatedAt: record.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: record.UpdatedAt.Format(time.RFC3339),
+	}
 }

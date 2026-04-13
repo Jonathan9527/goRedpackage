@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/rand"
 
+	"learnGO/internal/database"
 	"learnGO/internal/repository"
 
 	"github.com/shopspring/decimal"
@@ -12,11 +13,19 @@ import (
 
 type RedPackageService struct {
 	userRepository *repository.UserRepository
+	publisher      *database.RabbitMQPublisher
 }
 
-func NewRedPackageService(userRepository *repository.UserRepository) *RedPackageService {
+type RedPackageCreatedMessage struct {
+	Account        string    `json:"account"`
+	TotalAmount    string    `json:"total_amount"`
+	RedPackageList []float64 `json:"red_package_list"`
+}
+
+func NewRedPackageService(userRepository *repository.UserRepository, publisher *database.RabbitMQPublisher) *RedPackageService {
 	return &RedPackageService{
 		userRepository: userRepository,
+		publisher:      publisher,
 	}
 }
 
@@ -26,15 +35,23 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 		return nil, errors.New("user not found")
 	}
 
-	if decimal.RequireFromString(user.Balance).LessThan(redAmount) {
+	if user.Balance.LessThan(redAmount) {
 		return nil, errors.New("insufficient balance")
 	}
 
-	// if err := s.userRepository.UpdateBalance(ctx, account, decimal.RequireFromString(user.Balance).Sub(redAmount)); err != nil {
-	// 	return nil, err
-	// }
+	if err := s.userRepository.UpdateBalance(ctx, user, redAmount); err != nil {
+		return nil, err
+	}
 
 	redPackageList := makeRedPackageList(redAmount.IntPart(), 5)
+	if err := s.publisher.PublishJSON("red_package.created", RedPackageCreatedMessage{
+		Account:        account,
+		TotalAmount:    redAmount.StringFixed(2),
+		RedPackageList: redPackageList,
+	}); err != nil {
+		return nil, err
+	}
+
 	return redPackageList, nil
 }
 

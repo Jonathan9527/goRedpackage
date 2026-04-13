@@ -1,11 +1,15 @@
 package config
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 type Config struct {
 	AppPort  string
 	DB       DatabaseConfig
 	RabbitMQ RabbitMQConfig
+	Redis    RedisConfig
 }
 
 type DatabaseConfig struct {
@@ -23,6 +27,12 @@ type RabbitMQConfig struct {
 	User     string
 	Password string
 	VHost    string
+}
+type RedisConfig struct {
+	Host     string
+	Port     string
+	Password string
+	DB       int
 }
 
 func Load() Config {
@@ -43,6 +53,12 @@ func Load() Config {
 			Password: getEnv("RABBITMQ_PASSWORD", "learngo_password"),
 			VHost:    getEnv("RABBITMQ_VHOST", "/"),
 		},
+		Redis: RedisConfig{
+			Host:     getEnv("REDIS_HOST", "localhost"),
+			Port:     getEnv("REDIS_PORT", "6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvAsInt("REDIS_DB", 0),
+		},
 	}
 }
 
@@ -52,4 +68,17 @@ func getEnv(key string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func getEnvAsInt(key string, fallback int) int {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	intVal := 0
+	_, err := fmt.Sscanf(value, "%d", &intVal)
+	if err != nil {
+		return fallback
+	}
+	return intVal
 }

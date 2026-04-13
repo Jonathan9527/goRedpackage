@@ -1,12 +1,13 @@
 package handler
 
 import (
-	"database/sql"
+	"errors"
 	"net/http"
 
 	"learnGO/internal/service"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 type UserHandler struct {
@@ -22,7 +23,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) FindByAccount(c *gin.Context) {
 	user, err := h.userService.FindByAccount(c.Request.Context(), c.Param("account"))
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			return
 		}
