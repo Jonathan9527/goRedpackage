@@ -49,7 +49,9 @@ func main() {
 	userService := service.NewUserService(userRepository)
 	userHandler := handler.NewUserHandler(userService)
 	redPackageService := service.NewRedPackageService(userRepository, rabbitMQConn, redisClient)
-	redPackageHandler := handler.NewRedPackageHandler(redPackageService)
+
+	getRedPackageService := service.NewGetRedPackageService(redisClient)
+	redPackageHandler := handler.NewRedPackageHandler(redPackageService, getRedPackageService)
 
 	approuter.Register(router, approuter.Handlers{
 		Home:       homeHandler,

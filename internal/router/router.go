@@ -24,7 +24,7 @@ func Register(engine *gin.Engine, handlers Handlers) {
 		// 用户相关接口
 		redPackage := v1.Group("/redpackage")
 		redPackage.POST("/sendRedPackage", handlers.RedPackage.SendRedPackage)
-		redPackage.GET("/list", handlers.RedPackage.GetRedPackage)
+		redPackage.GET("/getRedPackage", handlers.RedPackage.GetRedPackage)
 
 	}
 }

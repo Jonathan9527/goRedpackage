@@ -12,8 +12,9 @@ import (
 )
 
 type RedPackageHandler struct {
-	userService       *service.UserService
-	redPackageService *service.RedPackageService
+	userService          *service.UserService
+	redPackageService    *service.RedPackageService
+	getRedPackageService *service.GetRedPackageService
 }
 
 type sendRedPackageRequest struct {
@@ -22,9 +23,10 @@ type sendRedPackageRequest struct {
 	Number  int    `json:"number" binding:"required"`
 }
 
-func NewRedPackageHandler(redPackageService *service.RedPackageService) *RedPackageHandler {
+func NewRedPackageHandler(redPackageService *service.RedPackageService, getRedPackageService *service.GetRedPackageService) *RedPackageHandler {
 	return &RedPackageHandler{
-		redPackageService: redPackageService,
+		redPackageService:    redPackageService,
+		getRedPackageService: getRedPackageService,
 	}
 }
 
@@ -67,10 +69,16 @@ func (h *RedPackageHandler) GetRedPackage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "userId is required"})
 		return
 	}
-
+	result, err := h.getRedPackageService.GetRedPackage(c.Request.Context(), redPackageid, useId)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"redPackageId": redPackageid,
 		"userId":       useId,
+		"amount":       result.Amount,
+		"status":       result.Status,
 	})
 }
 
