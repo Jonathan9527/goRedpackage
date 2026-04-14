@@ -14,7 +14,15 @@ func Migrate(db *gorm.DB) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	if err := db.WithContext(ctx).AutoMigrate(&model.UserRecord{}, &model.UserTransactionRecord{}); err != nil {
+	if db.WithContext(ctx).Migrator().HasTable(&model.UserRedPackages{}) &&
+		db.WithContext(ctx).Migrator().HasColumn(&model.UserRedPackages{}, "numbers") &&
+		!db.WithContext(ctx).Migrator().HasColumn(&model.UserRedPackages{}, "number") {
+		if err := db.WithContext(ctx).Migrator().RenameColumn(&model.UserRedPackages{}, "numbers", "number"); err != nil {
+			return fmt.Errorf("rename user_red_packages.numbers to number: %w", err)
+		}
+	}
+
+	if err := db.WithContext(ctx).AutoMigrate(&model.UserRecord{}, &model.UserTransactionRecord{}, &model.UserRedPackages{}); err != nil {
 		return fmt.Errorf("create users table: %w", err)
 	}
 

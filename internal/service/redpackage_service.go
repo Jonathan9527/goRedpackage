@@ -40,7 +40,7 @@ func NewRedPackageService(userRepository *repository.UserRepository, publisher *
 	}
 }
 
-func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string, redAmount decimal.Decimal) ([]float64, error) {
+func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string, redAmount decimal.Decimal, number int) ([]float64, error) {
 	user, err := s.userRepository.FindByAccount(ctx, account)
 	if err != nil {
 		return nil, errors.New("user not found")
@@ -50,11 +50,15 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 		return nil, errors.New("insufficient balance")
 	}
 
-	if err := s.userRepository.UpdateBalance(ctx, user, redAmount); err != nil {
+	pkgId, err := s.userRepository.UpdateBalance(ctx, user, redAmount)
+	if err != nil {
 		return nil, err
 	}
-	redPackageList := makeRedPackageList(redAmount.IntPart(), 5)
-	if err := s.cacheRedPackageList(ctx, account, redPackageList); err != nil {
+	// if err := s.userRepository.UpdateBalance(ctx, user, redAmount); err != nil {
+	// 	return nil, err
+	// }
+	redPackageList := makeRedPackageList(redAmount.IntPart(), number)
+	if err := s.cacheRedPackageList(ctx, account, redPackageList, pkgId); err != nil {
 		return nil, err
 	}
 	if err := s.publisher.PublishJSON("red_package.created", RedPackageCreatedMessage{
@@ -68,22 +72,42 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 	return redPackageList, nil
 }
 
-func (s *RedPackageService) cacheRedPackageList(ctx context.Context, account string, redPackageList []float64) error {
+func (s *RedPackageService) cacheRedPackageList(ctx context.Context, account string, redPackageList []float64, pkgId int64) error {
 	if s.redisClient == nil {
 		return nil
 	}
 
-	body, err := json.Marshal(gin.H{
-	body, err := json.Marshal(CachedRedPackage{
-		Account:        account,
-		RedPackageList: redPackageList,
-	})
-	if err != nil {
+	// // body, err := json.Marshal(gin.H{
+	// body, err := json.Marshal(CachedRedPackage{
+	// 	Account:        account,
+	// 	RedPackageList: redPackageList,
+	// })
+	// if err != nil {
+	// 	return err
+	// }
+	//写入总数key
+	totalkey := fmt.Sprintf("redpackage_total:%d", pkgId)
+	if err := s.redisClient.Set(ctx, totalkey, len(redPackageList), 24*7*time.Hour).Err(); err != nil {
+
+	}
+	redPackageListJSON, _ := json.Marshal(redPackageList)
+
+	//写入红包详情key
+	detailKey := fmt.Sprintf("redpackage_detail:%d", pkgId)
+	if err := s.redisClient.HSet(ctx, detailKey, map[string]interface{}{
+		"account": account,
+		"list":    redPackageListJSON,
+		"total":   len(redPackageList),
+	}).Err(); err != nil {
 		return err
 	}
-
-	key := fmt.Sprintf("redpackage:%s", account)
-	return s.redisClient.Set(ctx, key, body, 10*time.Minute).Err()
+	//写入红包列表key
+	redListkey := fmt.Sprintf("redpackage_list:%d", pkgId)
+	values := make([]interface{}, len(redPackageList))
+	for i, v := range redPackageList {
+		values[i] = v
+	}
+	return s.redisClient.LPush(ctx, redListkey, values...).Err()
 }
 
 func makeRedPackageList(totalAmount int64, totalNum int) []float64 {

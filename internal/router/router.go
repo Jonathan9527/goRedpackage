@@ -21,7 +21,11 @@ func Register(engine *gin.Engine, handlers Handlers) {
 	engine.GET("/users/:account", UserDetailRateLimiter(10, 5), handlers.User.FindByAccount)
 	v1 := engine.Group("/v1")
 	{
-		v1.POST("/sendRedPackage", handlers.RedPackage.SendRedPackage)
+		// 用户相关接口
+		redPackage := v1.Group("/redpackage")
+		redPackage.POST("/sendRedPackage", handlers.RedPackage.SendRedPackage)
+		redPackage.GET("/list", handlers.RedPackage.GetRedPackage)
+
 	}
 }
 

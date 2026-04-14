@@ -50,7 +50,7 @@ func (r *UserRepository) List(ctx context.Context, limit int, offset int) ([]mod
 	return users, nil
 }
 
-func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPackageAmount decimal.Decimal) error {
+func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPackageAmount decimal.Decimal) (int64, error) {
 	newBalance := u.Balance.Sub(redPackageAmount)
 	tx := r.db.WithContext(ctx).Begin()
 	res := tx.Model(&model.UserRecord{}).
@@ -61,11 +61,11 @@ func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPac
 		})
 	if res.Error != nil {
 		tx.Rollback()
-		return res.Error
+		return 0, res.Error
 	}
 	if res.RowsAffected == 0 {
 		tx.Rollback()
-		return errors.New("balance changed, update failed")
+		return 0, errors.New("balance changed, update failed")
 	}
 	err := tx.Create(&model.UserTransactionRecord{
 		UserID:        u.ID,
@@ -75,12 +75,21 @@ func (r *UserRepository) UpdateBalance(ctx context.Context, u model.User, redPac
 		AfterBalance:  newBalance,
 		InOrOut:       0,
 	}).Error
-	if err != nil {
+	//创建红包记录
+	redPkg := &model.UserRedPackages{
+		UserID:       u.ID,
+		Type:         "red_package",
+		Amount:       redPackageAmount,
+		Number:       10,
+		AfterBalance: newBalance,
+	}
+	err2 := tx.Create(redPkg).Error
+	if err != nil || err2 != nil {
 		tx.Rollback()
-		return err
+		return 0, errors.New("failed to create transaction record or red package record")
 	}
 	tx.Commit()
-	return nil
+	return redPkg.ID, nil
 }
 
 func toUserModel(record model.UserRecord) model.User {
