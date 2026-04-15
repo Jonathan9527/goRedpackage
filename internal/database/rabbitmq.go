@@ -72,3 +72,38 @@ func (p *RabbitMQPublisher) PublishJSON(queue string, payload any) error {
 		},
 	)
 }
+
+func (p *RabbitMQPublisher) Consume(queue string) (<-chan amqp091.Delivery, error) {
+	channel, err := p.conn.Channel()
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := channel.QueueDeclare(
+		queue,
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		channel.Close()
+		return nil, err
+	}
+	channel.Qos(2, 0, false)
+	deliveries, err := channel.Consume(
+		queue,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		channel.Close()
+		return nil, err
+	}
+
+	return deliveries, nil
+}

@@ -32,6 +32,17 @@ func (r *UserRepository) FindByAccount(ctx context.Context, account string) (mod
 	return toUserModel(record), nil
 }
 
+func (r *UserRepository) FindByUid(ctx context.Context, uid int64) (model.User, error) {
+	var record model.UserRecord
+	if err := r.db.WithContext(ctx).
+		Where("id = ?", uid).
+		First(&record).Error; err != nil {
+		return model.User{}, err
+	}
+
+	return toUserModel(record), nil
+}
+
 func (r *UserRepository) List(ctx context.Context, limit int, offset int) ([]model.User, error) {
 	var records []model.UserRecord
 	if err := r.db.WithContext(ctx).
@@ -101,4 +112,41 @@ func toUserModel(record model.UserRecord) model.User {
 		CreatedAt: record.CreatedAt.Format(time.RFC3339),
 		UpdatedAt: record.UpdatedAt.Format(time.RFC3339),
 	}
+}
+
+func (r *UserRepository) UpdateGetUserBalance(ctx context.Context, u model.User, redPackageAmount decimal.Decimal, createTime string) (int64, error) {
+	newBalance := u.Balance.Sub(redPackageAmount)
+	tx := r.db.WithContext(ctx).Begin()
+	res := tx.Model(&model.UserRecord{}).
+		Where(&model.UserRecord{ID: u.ID, Balance: u.Balance}).
+		Updates(map[string]interface{}{
+			"balance":    newBalance,
+			"updated_at": time.Now(),
+		})
+	if res.Error != nil {
+		tx.Rollback()
+		return 0, res.Error
+	}
+	if res.RowsAffected == 0 {
+		tx.Rollback()
+		return 0, errors.New("balance changed, update failed")
+	}
+	getRedOackageTime, _ := time.Parse("2006-01-02 15:04:05", createTime)
+	recordList := &model.UserTransactionRecord{
+		UserID:        u.ID,
+		Type:          "get_red_package",
+		Amount:        redPackageAmount,
+		BeforeBalance: u.Balance,
+		AfterBalance:  newBalance,
+		InOrOut:       1,
+		CreatedAt:     getRedOackageTime,
+	}
+	err := tx.Create(recordList).Error
+
+	if err != nil {
+		tx.Rollback()
+		return 0, errors.New("failed to create transaction record or red package record")
+	}
+	tx.Commit()
+	return recordList.ID, nil
 }

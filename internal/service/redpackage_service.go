@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
+	"strconv"
 	"time"
 
 	"learnGO/internal/database"
@@ -22,9 +24,10 @@ type RedPackageService struct {
 }
 
 type RedPackageCreatedMessage struct {
-	Account        string    `json:"account"`
-	TotalAmount    string    `json:"total_amount"`
-	RedPackageList []float64 `json:"red_package_list"`
+	Account        string `json:"account"`
+	Amount         string `json:"amount"`
+	Create_time    string `json:"create_time"`
+	Red_package_id string `json:"red_package_id"`
 }
 
 type CachedRedPackage struct {
@@ -54,18 +57,8 @@ func (s *RedPackageService) CreateRedPackage(ctx context.Context, account string
 	if err != nil {
 		return nil, err
 	}
-	// if err := s.userRepository.UpdateBalance(ctx, user, redAmount); err != nil {
-	// 	return nil, err
-	// }
 	redPackageList := makeRedPackageList(redAmount.IntPart(), number)
 	if err := s.cacheRedPackageList(ctx, account, redPackageList, pkgId); err != nil {
-		return nil, err
-	}
-	if err := s.publisher.PublishJSON("red_package.created", RedPackageCreatedMessage{
-		Account:        account,
-		TotalAmount:    redAmount.StringFixed(2),
-		RedPackageList: redPackageList,
-	}); err != nil {
 		return nil, err
 	}
 
@@ -76,15 +69,6 @@ func (s *RedPackageService) cacheRedPackageList(ctx context.Context, account str
 	if s.redisClient == nil {
 		return nil
 	}
-
-	// // body, err := json.Marshal(gin.H{
-	// body, err := json.Marshal(CachedRedPackage{
-	// 	Account:        account,
-	// 	RedPackageList: redPackageList,
-	// })
-	// if err != nil {
-	// 	return err
-	// }
 	//写入总数key
 	totalkey := fmt.Sprintf("redpackage_total:%d", pkgId)
 	if err := s.redisClient.Set(ctx, totalkey, len(redPackageList), 24*7*time.Hour).Err(); err != nil {
@@ -132,4 +116,27 @@ func makeRedPackageList(totalAmount int64, totalNum int) []float64 {
 	}
 
 	return result
+}
+
+func (s *RedPackageService) DealUserRedPackageCreatedMessage(ctx context.Context, msg RedPackageCreatedMessage) {
+
+	log.Printf("处理红包发放消息: account=%s amount=%s id=%s time=%s", msg.Account, msg.Amount, msg.Red_package_id, msg.Create_time)
+	// 这里可以添加一些处理逻辑，比如记录日志、更新统计数据等
+	uid, err := strconv.ParseInt(msg.Account, 10, 64)
+	if err != nil {
+		log.Printf("处理红包发放消息失败UID解析: account=%s, err=%v", msg.Account, err)
+		return
+	}
+	user, err := s.userRepository.FindByUid(ctx, uid)
+	if err != nil {
+		log.Printf("处理红包发放消息失败: account=%s, err=%v", msg.Account, err)
+		return
+	}
+	redAmount, _ := decimal.NewFromString(msg.Amount)
+	pkgId, err := s.userRepository.UpdateGetUserBalance(ctx, user, redAmount, msg.Create_time)
+	if err != nil {
+		log.Printf("处理红包发放消息失败: account=%s, err=%v", msg.Account, err)
+		return
+	}
+	log.Printf("处理红包发放消息成功: account=%s, pkgId=%d", msg.Account, pkgId)
 }
