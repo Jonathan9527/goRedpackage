@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"learnGO/internal/database"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
 type GetRedPackageService struct {
 	redisClient *redis.Client
+	publisher   *database.RabbitMQPublisher
 }
 
 type GetRedPackageResult struct {
@@ -17,10 +20,18 @@ type GetRedPackageResult struct {
 	Status string `json:"status"`
 }
 
-func NewGetRedPackageService(redisClient *redis.Client) *GetRedPackageService {
+func NewGetRedPackageService(redisClient *redis.Client, publisher *database.RabbitMQPublisher) *GetRedPackageService {
 	return &GetRedPackageService{
 		redisClient: redisClient,
+		publisher:   publisher,
 	}
+}
+
+type MqRedPackageCreatedMessage struct {
+	Account      string `json:"account"`
+	Amount       string `json:"amount"`
+	CreateTime   string `json:"create_time"`
+	RedPackageId string `json:"red_package_id"`
 }
 
 func (s *GetRedPackageService) GetRedPackage(ctx context.Context, redPackageID string, userID string) (*GetRedPackageResult, error) {
@@ -63,7 +74,20 @@ return {amount, "ok"}
 
 	amount := fmt.Sprint(values[0])
 	status := fmt.Sprint(values[1])
-
+	if status != "ok" {
+		return &GetRedPackageResult{
+			Amount: amount,
+			Status: status,
+		}, nil
+	}
+	if err := s.publisher.PublishJSON("red_package_pool.created", MqRedPackageCreatedMessage{
+		Account:      userID,
+		Amount:       amount,
+		CreateTime:   time.Now().Format("2006-01-02 15:04:05"),
+		RedPackageId: redPackageID,
+	}); err != nil {
+		return nil, err
+	}
 	return &GetRedPackageResult{
 		Amount: amount,
 		Status: status,

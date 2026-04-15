@@ -50,7 +50,7 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 	redPackageService := service.NewRedPackageService(userRepository, rabbitMQConn, redisClient)
 
-	getRedPackageService := service.NewGetRedPackageService(redisClient)
+	getRedPackageService := service.NewGetRedPackageService(redisClient, rabbitMQConn)
 	redPackageHandler := handler.NewRedPackageHandler(redPackageService, getRedPackageService)
 
 	approuter.Register(router, approuter.Handlers{
