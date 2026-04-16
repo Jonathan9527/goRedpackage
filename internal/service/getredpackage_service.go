@@ -80,7 +80,7 @@ return {amount, "ok"}
 			Status: status,
 		}, nil
 	}
-	if err := s.publisher.PublishJSON("red_package_pool.created", MqRedPackageCreatedMessage{
+	if err := s.publisher.PublishJSON("red_package.created", MqRedPackageCreatedMessage{
 		Account:      userID,
 		Amount:       amount,
 		CreateTime:   time.Now().Format("2006-01-02 15:04:05"),

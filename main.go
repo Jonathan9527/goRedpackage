@@ -1,11 +1,9 @@
 package main
 
 import (
-	"context"
 	"log"
 
 	"learnGO/internal/config"
-	"learnGO/internal/consumer"
 	"learnGO/internal/database"
 	"learnGO/internal/handler"
 	"learnGO/internal/repository"
@@ -56,10 +54,10 @@ func main() {
 	getRedPackageService := service.NewGetRedPackageService(redisClient, rabbitMQConn)
 	redPackageHandler := handler.NewRedPackageHandler(redPackageService, getRedPackageService)
 
-	redPackageConsumer := consumer.NewRedPackageConsumer(rabbitMQConn, redPackageService)
-	if err := redPackageConsumer.Start(context.Background()); err != nil {
-		log.Fatalf("start red package consumer: %v", err)
-	}
+	// redPackageConsumer := consumer.NewRedPackageConsumer(rabbitMQConn, redPackageService)
+	// if err := redPackageConsumer.Start(context.Background()); err != nil {
+	// 	log.Fatalf("start red package consumer: %v", err)
+	// }
 
 	approuter.Register(router, approuter.Handlers{
 		Home:       homeHandler,

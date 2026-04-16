@@ -107,3 +107,64 @@ func (p *RabbitMQPublisher) Consume(queue string) (<-chan amqp091.Delivery, erro
 
 	return deliveries, nil
 }
+
+func (p *RabbitMQPublisher) DeclareRedPackageQueues() error {
+	channel, err := p.conn.Channel()
+	if err != nil {
+		return err
+	}
+	defer channel.Close()
+
+	// 1. 声明死信交换机
+	if err := channel.ExchangeDeclare(
+		"red_package.dlx",
+		"direct",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return err
+	}
+
+	// 2. 声明死信队列
+	if _, err := channel.QueueDeclare(
+		"red_package.dead",
+		true,
+		false,
+		false,
+		false,
+		nil,
+	); err != nil {
+		return err
+	}
+
+	// 3. 绑定死信队列到死信交换机
+	if err := channel.QueueBind(
+		"red_package.dead",
+		"red_package.dead",
+		"red_package.dlx",
+		false,
+		nil,
+	); err != nil {
+		return err
+	}
+
+	// 4. 声明业务队列，并配置死信参数
+	if _, err := channel.QueueDeclare(
+		"red_package.created",
+		true,
+		false,
+		false,
+		false,
+		amqp091.Table{
+			"x-dead-letter-exchange":    "red_package.dlx",
+			"x-dead-letter-routing-key": "red_package.dead",
+		},
+	); err != nil {
+		return err
+	}
+
+	return nil
+}
